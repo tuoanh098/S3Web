@@ -12,6 +12,7 @@ import AuthLayout from "./pages/AuthLayout";
 import Login from "./pages/Login";
 import Forgot from "./pages/Forgot";
 import Logout from "./pages/Logout";
+import Profile from "./pages/Profile";
 import ResetPassword from "./pages/ResetPassword";
 import Dashboard from "./pages/Dashboard";
 
@@ -36,6 +37,7 @@ const router = createBrowserRouter([
             element: <AppLayout />,
             children: [
                 { path: "/", element: <Dashboard /> },
+                { path: "/profile", element: <Profile /> }
             ]
         }]
     }

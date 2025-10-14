@@ -87,6 +87,13 @@ export const AuthApi = {
             body: { email, token, NewPassword: password } // <-- Change "password" to "NewPassword"
         }),
 
+    updateProfile: (payload) =>
+        jsonFetch(`${IDENTITY}/auth/profile`, {
+            method: "PUT",
+            withCreds: true,
+            body: payload
+        }),
+
     me: () =>
         jsonFetch(`${IDENTITY}/auth/me`, {
             headers: { Authorization: `Bearer ${localStorage.getItem("access_token") || ""}` },
@@ -115,12 +122,3 @@ export const StudentsApi = {
     update: (id, dto) => http.put(`/api/students/${id}`, dto).then(r => r.data),
     remove: (id) => http.delete(`/api/students/${id}`).then(r => r.data),
 };
-
-/* ------------------ OPTIONAL EXAMPLE USAGE ------------------
-import { AuthApi, StudentsApi } from "./api";
-
-await AuthApi.seed();
-await AuthApi.login("admin@ras.local","Passw0rd!");
-const me = await AuthApi.me();
-const list = await StudentsApi.list();
--------------------------------------------------------------- */

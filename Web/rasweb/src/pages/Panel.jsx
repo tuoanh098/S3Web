@@ -10,7 +10,7 @@ export default function Panel() {
                 <button className="px-4 py-2 border rounded" onClick={() => nav("/dashboard")}>
                     Go to Dashboard
                 </button>
-                <button className="px-4 py-2 border rounded" onClick={() => nav("/students")}>
+                <button className="px-4 py-2 border rounded" onClick={() => nav("/profile")}>
                     Go to Students
                 </button>
             </div>

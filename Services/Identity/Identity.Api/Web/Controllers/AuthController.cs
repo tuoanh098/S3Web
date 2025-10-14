@@ -4,6 +4,7 @@ using System.Threading.Tasks;
 using Identity.Api.Web.Requests;
 using Identity.Application.Auth;
 using Identity.Application.Email;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
@@ -190,6 +191,32 @@ public sealed class AuthController : ControllerBase
             return Problem(detail: "An error occurred while processing the request.");
         }
     }
+
+    [Authorize]
+    [HttpGet("me")]
+    public async Task<IActionResult> Me()
+    {
+        // Get the current user from the HttpContext.
+        // GetUserAsync will read the user's ID from the token's claims.
+        var user = await _users.GetUserAsync(User);
+        if (user is null)
+        {
+            // This should not happen if [Authorize] is working, but it's good practice.
+            return NotFound();
+        }
+
+        // Get the roles associated with the user.
+        var roles = await _users.GetRolesAsync(user);
+
+        // Return the user's information.
+        return Ok(new
+        {
+            email = user.Email,
+            userName = user.UserName,
+            roles = roles
+        });
+    }
+
     private void SetRefreshCookie(string token, DateTime expiresUtc) =>
         Response.Cookies.Append("rt", token, BuildCookieOptions(expiresUtc));
 

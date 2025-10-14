@@ -1,6 +1,0 @@
-@Shared.Contact_HostAddress = http://localhost:5138
-
-GET {{Shared.Contact_HostAddress}}/weatherforecast/
-Accept: application/json
-
-###
