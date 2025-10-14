@@ -1,0 +1,9 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* optional: make images not blow up outside containers */
+img {
+    max-width: 100%;
+    height: auto;
+}
