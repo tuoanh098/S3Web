@@ -10,6 +10,8 @@ public class StudentRepository : IStudentRepository
     private readonly StudentDbContext _db;
     public StudentRepository(StudentDbContext db) => _db = db;
 
+    public async Task<Student?> GetByEmailAsync(string email, CancellationToken ct = default) =>
+        await _db.Students.AsNoTracking().FirstOrDefaultAsync(s => s.Email == email, ct);
     public async Task<Student> AddAsync(Student s, CancellationToken ct = default)
     {
         _db.Students.Add(s);

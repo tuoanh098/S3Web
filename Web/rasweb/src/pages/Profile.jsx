@@ -1,7 +1,7 @@
 import React, { useEffect, useState } from "react";
 import { useAuth } from "../auth/AuthContext";
 import Avatar from "../ui/Avatar";
-import { AuthApi } from "../api";
+import { AuthApi, StudentsApi } from "../api"; // <- ensure StudentsApi exported here
 import EditProfile from "./EditProfile";
 
 export default function Profile() {
@@ -13,21 +13,71 @@ export default function Profile() {
 
     useEffect(() => {
         let mounted = true;
-        setLoading(true);
-        // Try to fetch canonical profile from /auth/me (if implemented)
-        AuthApi.me()
-            .then(d => { if (mounted) setProfile(d); })
-            .catch(() => { /* ignore, will fallback to token claims */ })
-            .finally(() => { if (mounted) setLoading(false); });
-        return () => (mounted = false);
-    }, []);
 
-    const onSaved = updated => {
+        async function load() {
+            setLoading(true);
+            try {
+                // 1) First try identity's /auth/me (may include .student)
+                let me = null;
+                try {
+                    me = await AuthApi.me(); // your function; may return { identity, student } or just identity
+                } catch (e) {
+                    // if /auth/me requires auth header and user not logged in this may fail; ignore for now
+                    me = null;
+                }
+
+                // If me contains student directly, use it
+                if (mounted && me?.student) {
+                    setProfile(me.student);
+                    return;
+                }
+
+                // Determine the email to query with: prefer me.identity.email, else token claims (useAuth().user)
+                const email =
+                    me?.identity?.email ||
+                    me?.email ||
+                    user?.email ||
+                    user?.unique_name ||
+                    user?.sub; // fallback claims
+
+                if (!email) {
+                    // no email -> nothing to fetch
+                    if (mounted) setProfile(null);
+                    return;
+                }
+
+                // 2) Fallback: call Students service
+                try {
+                    const student = await StudentsApi.getByEmail(email);
+                    if (mounted) setProfile(student);
+                } catch (ex) {
+                    // 404 or network error -> leave profile null but don't crash
+                    if (mounted) setProfile(null);
+                }
+            } catch (ex) {
+                if (mounted) setErr("Failed to load profile");
+            } finally {
+                if (mounted) setLoading(false);
+            }
+        }
+
+        load();
+        return () => (mounted = false);
+    }, [user]);
+
+    const onSaved = (updated) => {
         setProfile(updated);
         setEditing(false);
     };
 
-    const displayName = profile?.displayName || user?.name || user?.unique_name || user?.email || "RAS Student";
+    const displayName =
+        profile?.displayName ||
+        profile?.fullName ||
+        user?.name ||
+        user?.unique_name ||
+        user?.email ||
+        "RAS Student";
+
     const email = profile?.email || user?.email || "—";
     const roles = profile?.roles || user?.roles || user?.role || [];
 
@@ -37,7 +87,9 @@ export default function Profile() {
                 <div className="flex flex-col items-center md:items-start md:col-span-1">
                     <Avatar name={displayName} size={96} />
                     <h2 className="mt-4 text-xl font-bold text-ras-indigo">{displayName}</h2>
-                    <p className="text-sm text-slate-500">{roles && (Array.isArray(roles) ? roles.join(", ") : String(roles))}</p>
+                    <p className="text-sm text-slate-500">
+                        {roles && (Array.isArray(roles) ? roles.join(", ") : String(roles))}
+                    </p>
 
                     <div className="mt-6 w-full">
                         <button onClick={() => setEditing(true)} className="w-full rounded-xl bg-ras-indigo text-white py-2">
@@ -67,16 +119,25 @@ export default function Profile() {
 
                             <div className="md:col-span-2">
                                 <label className="block text-xs text-slate-500">About</label>
-                                <div className="mt-1 text-sm text-slate-800">
-                                    {profile?.bio ?? "No profile description set."}
-                                </div>
+                                <div className="mt-1 text-sm text-slate-800">{profile?.bio ?? "No profile description set."}</div>
                             </div>
 
                             <div className="md:col-span-2">
                                 <label className="block text-xs text-slate-500">Actions</label>
                                 <div className="mt-2 flex gap-2">
-                                    <a href="/reset-password" className="text-sm text-ras-coral underline">Change password</a>
-                                    <a href="#" onClick={e => { e.preventDefault(); setErr("Export not implemented"); }} className="text-sm text-slate-600">Export data</a>
+                                    <a href="/reset-password" className="text-sm text-ras-coral underline">
+                                        Change password
+                                    </a>
+                                    <a
+                                        href="#"
+                                        onClick={(e) => {
+                                            e.preventDefault();
+                                            setErr("Export not implemented");
+                                        }}
+                                        className="text-sm text-slate-600"
+                                    >
+                                        Export data
+                                    </a>
                                 </div>
                             </div>
                         </div>

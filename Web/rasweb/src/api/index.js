@@ -115,7 +115,12 @@ export const AuthApi = {
 export const StudentsApi = {
     health: () => http.get(`/health`).then(r => r.data),
     dbPing: () => http.get(`/db-ping`).then(r => r.data),
-
+    getByEmail: async (email) => {
+        if (!email) throw new Error("email required");
+        const res = await api.get("/api/students/by-email", { params: { email } });
+        // may 404 -> caller should handle
+        return res.data;
+    },    
     list: () => http.get(`/api/students`).then(r => r.data),
     get: (id) => http.get(`/api/students/${id}`).then(r => r.data),
     create: (dto) => http.post(`/api/students`, dto).then(r => r.data),

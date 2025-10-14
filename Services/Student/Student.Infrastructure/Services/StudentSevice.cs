@@ -7,6 +7,12 @@ public class StudentService : IStudentService
     private readonly IStudentRepository _repo;
     public StudentService(IStudentRepository repo) => _repo = repo;
 
+    public async Task<Student?> GetByEmailAsync(string email, CancellationToken ct = default)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return null;
+        return await _repo.GetByEmailAsync(email.Trim());
+    }
+
     public async Task<Student> CreateAsync(string fullName, string email, CancellationToken ct = default)
     {
         var s = new Student

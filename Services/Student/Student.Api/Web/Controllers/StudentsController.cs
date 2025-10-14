@@ -26,6 +26,15 @@ public class StudentsController : ControllerBase
         return Ok(dto);
     }
 
+    [HttpGet("by-email")]
+    public async Task<IActionResult> GetByEmail([FromQuery] string email)
+    {
+        if (string.IsNullOrWhiteSpace(email)) return BadRequest(new { error = "email required" });
+        var s = await _service.GetByEmailAsync(email);
+        if (s is null) return NotFound();
+        return Ok(new StudentDto(s.Id, s.FullName, s.Email, s.JoinedAt));
+    }
+
     [HttpGet("{id:long}")]
     public async Task<IActionResult> Get(long id)
     {
@@ -56,4 +65,5 @@ public class StudentsController : ControllerBase
         if (!ok) return NotFound();
         return NoContent();
     }
+
 }
