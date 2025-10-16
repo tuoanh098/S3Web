@@ -1,129 +1,99 @@
-/**
- * API surface for RasStudent FE <-> BE
- */
-import { IDENTITY, setAccessToken } from "../lib/httpAuth";
+import { IDENTITY, GATEWAY, setAccessToken, httpAuthed } from "../lib/httpAuth";
 
 async function jsonFetch(url, options = {}) {
-    const headers = { ...options.headers };
-    if (options.body) {
-        headers["Content-Type"] = "application/json";
-    }
+    const headers = { ...(options.headers || {}) };
+    if (options.body) headers["Content-Type"] = "application/json";
 
     const res = await fetch(url, {
-        ...options,
+        method: options.method || "GET",
         headers,
-        // If the body is a JS object, stringify it
         body: options.body ? JSON.stringify(options.body) : undefined,
-        // Handle credentials option
         credentials: options.withCreds ? "include" : "omit",
     });
 
     if (!res.ok) {
-        // Try to parse error text, then fall back to status text
-        const errorText = await res.text();
-        throw new Error(errorText || res.statusText);
+        const text = await res.text();
+        let parsed;
+        try { parsed = JSON.parse(text); } catch { }
+        const errMsg = parsed?.error || text || res.statusText;
+        const err = new Error(errMsg);
+        err.status = res.status;
+        throw err;
     }
 
-    // Handle 204 No Content response
-    if (res.status === 204) {
-        return undefined;
-    }
-
-    return res.json();
+    if (res.status === 204) return undefined;
+    const txt = await res.text();
+    if (!txt) return undefined;
+    try { return JSON.parse(txt); } catch { return txt; }
 }
 
-/* ----------------------- AUTH SERVICE -----------------------
-   Base:  VITE_IDENTITY_API (e.g., https://localhost:7171)
-
-   POST /auth/register?email&password
-   POST /auth/login?email&password -> { access_token, token_type, roles } + Set-Cookie(rt)
-   POST /auth/refresh              -> { access_token, token_type } (uses cookie)
-   POST /auth/logout               -> 204 (clears cookie)
-   POST /auth/forgot?email         -> { reset_token } (DEV) or { sent: true }
-   GET  /auth/me                   -> { email, userName, roles } (requires bearer)
----------------------------------------------------------------- */
 
 export const AuthApi = {
-    seed: () => jsonFetch(`${IDENTITY}/auth/seed`, { method: "POST" }),
-    register: (email, password) =>
-        jsonFetch(`${IDENTITY}/auth/register?email=${encodeURIComponent(email)}&password=${encodeURIComponent(password)}`, { method: "POST" }),
+    register: (email, password) => {
+        const base = GATEWAY || IDENTITY;
+        return jsonFetch(`${base}/auth/register`, { method: "POST", body: { email, password } });
+    },
 
     async login(email, password) {
-        const data = await jsonFetch(`${IDENTITY}/auth/login`, {
-            method: "POST",
-            withCreds: true,
-            body: { email, password }
-        });
-        setAccessToken(data.access_token);
+        const payload = { username: email, password };
+        const endpoint = GATEWAY ? `${GATEWAY}/gateway/login` : `${IDENTITY}/auth/login`;
+        const data = await jsonFetch(endpoint, { method: "POST", body: payload, withCreds: true });
+
+        if (data?.access_token) setAccessToken(data.access_token);
+        if (data?.refresh_token) {
+            try { localStorage.setItem("refresh_token", data.refresh_token); } catch { }
+        }
+        if (data?.user) {
+            try { localStorage.setItem("identity", JSON.stringify(data.user)); } catch { }
+        }
+        if (data?.profile) {
+            try { localStorage.setItem("profile", JSON.stringify(data.profile)); } catch { }
+        }
+
         return data;
     },
 
     async refresh() {
-        const data = await jsonFetch(`${IDENTITY}/auth/refresh`, { method: "POST", withCreds: true });
-        setAccessToken(data.access_token);
+        const refreshToken = localStorage.getItem("refresh_token");
+        if (!refreshToken) throw new Error("no_refresh_token");
+
+        const endpoint = GATEWAY ? `${GATEWAY}/gateway/refresh` : `${IDENTITY}/auth/refresh`;
+        const data = await jsonFetch(endpoint, { method: "POST", withCreds: true, body: { RefreshToken: refreshToken } });
+
+        if (data?.access_token) setAccessToken(data.access_token);
+        if (data?.refresh_token) {
+            // rotate refresh token if server returned a new one
+            localStorage.setItem("refresh_token", data.refresh_token);
+        }
+
+        // optionally update identity/profile if returned
+        if (data?.user) {
+            localStorage.setItem("identity", JSON.stringify(data.user));
+        }
+        if (data?.profile) {
+            localStorage.setItem("profile", JSON.stringify(data.profile));
+        }
+
         return data;
     },
 
-    logout: async () => {
-        await jsonFetch(`${IDENTITY}/auth/logout`, { method: "POST", withCreds: true });
+    async logout() {
+        const refreshToken = localStorage.getItem("refresh_token");
+        const endpoint = GATEWAY ? `${GATEWAY}/gateway/logout` : `${IDENTITY}/auth/logout`;
+
+        if (refreshToken) {
+            try {
+                // send refresh token to logout endpoint (server will revoke)
+                await jsonFetch(endpoint, { method: "POST", withCreds: true, body: { RefreshToken: refreshToken } });
+            } catch (err) {
+                // ignore errors from remote, still clear local
+            }
+        }
+
+        // Clear client state
         setAccessToken(null);
+        localStorage.removeItem("refresh_token");
+        localStorage.removeItem("identity");
+        localStorage.removeItem("profile");
     },
-
-    forgot: (email) =>
-        jsonFetch(`${IDENTITY}/auth/forgot`, {
-            method: "POST",
-            body: { email }
-        }),
-
-    register: (email, password) =>
-        jsonFetch(`${IDENTITY}/auth/register`, {
-            method: "POST",
-            body: { email, password }
-        }),
-
-    resetPassword: (email, token, password) =>
-        jsonFetch(`${IDENTITY}/auth/reset`, {
-            method: "POST",
-            body: { email, token, NewPassword: password } // <-- Change "password" to "NewPassword"
-        }),
-
-    updateProfile: (payload) =>
-        jsonFetch(`${IDENTITY}/auth/profile`, {
-            method: "PUT",
-            withCreds: true,
-            body: payload
-        }),
-
-    me: () =>
-        jsonFetch(`${IDENTITY}/auth/me`, {
-            headers: { Authorization: `Bearer ${localStorage.getItem("access_token") || ""}` },
-        }),
-};
-
-/* ----------------------- STUDENTS SERVICE -----------------------
-   Base:  VITE_STUDENTS_API (e.g., https://localhost:7181)
-
-   GET    /health                     -> {status, service}
-   GET    /db-ping                    -> true/false (can connect)
-   GET    /api/students               -> Student[]
-   GET    /api/students/{id}
-   POST   /api/students               -> create { fullName, email }
-   PUT    /api/students/{id}
-   DELETE /api/students/{id}
------------------------------------------------------------------- */
-
-export const StudentsApi = {
-    health: () => http.get(`/health`).then(r => r.data),
-    dbPing: () => http.get(`/db-ping`).then(r => r.data),
-    getByEmail: async (email) => {
-        if (!email) throw new Error("email required");
-        const res = await api.get("/api/students/by-email", { params: { email } });
-        // may 404 -> caller should handle
-        return res.data;
-    },    
-    list: () => http.get(`/api/students`).then(r => r.data),
-    get: (id) => http.get(`/api/students/${id}`).then(r => r.data),
-    create: (dto) => http.post(`/api/students`, dto).then(r => r.data),
-    update: (id, dto) => http.put(`/api/students/${id}`, dto).then(r => r.data),
-    remove: (id) => http.delete(`/api/students/${id}`).then(r => r.data),
 };

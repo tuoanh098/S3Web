@@ -1,0 +1,29 @@
+﻿{
+  "$schema": "https://json.schemastore.org/launchsettings.json",
+  "profiles": {
+    "Gateway (http)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "http://localhost:7000",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Internal__ServiceToken": "dev-internal-token-CHANGE_ME",
+        "ServiceUrls__IdentityApi": "http://localhost:5001",
+        "ServiceUrls__StudentApi": "http://localhost:5011"
+      }
+    },
+    "Gateway (https)": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": false,
+      "applicationUrl": "https://localhost:7001;http://localhost:7000",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "Internal__ServiceToken": "dev-internal-token-CHANGE_ME",
+        "ServiceUrls__IdentityApi": "http://localhost:5001",
+        "ServiceUrls__StudentApi": "http://localhost:5011"
+      }
+    }
+  }
+}

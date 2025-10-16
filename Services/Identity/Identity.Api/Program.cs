@@ -3,14 +3,16 @@ using Identity.Infrastructure.Extensions;
 using Identity.Infrastructure.Persistence;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
+using Identity.Application.Repositories;
+using Identity.Infrastructure.Repositories;
 
 var builder = WebApplication.CreateBuilder(args);
 
 builder.Services.AddControllers();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
-
-// Identity (you already have this configured)
+builder.Services.AddHttpClient();
+builder.Services.AddScoped<IUserRepository, UserRepository>();
 builder.Services.AddIdentityCore<IdentityUser>()
     .AddRoles<IdentityRole>()
     .AddEntityFrameworkStores<Identity.Infrastructure.Persistence.IdentityDb>()
@@ -20,7 +22,7 @@ builder.Services.AddIdentityCore<IdentityUser>()
 builder.Services.AddIdentityInfrastructure(builder.Configuration);
 builder.Services.Configure<SmtpOptions>(builder.Configuration.GetSection("Smtp"));
 builder.Services.AddSingleton<IEmailSender, SmtpEmailSender>();
-
+    
 var conn = builder.Configuration.GetConnectionString("IdentityDb");
 if (string.IsNullOrWhiteSpace(conn))
 {

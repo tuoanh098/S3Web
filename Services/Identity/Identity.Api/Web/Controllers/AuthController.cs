@@ -1,230 +1,124 @@
-﻿using System;
-using System.Net;
-using System.Threading.Tasks;
-using Identity.Api.Web.Requests;
-using Identity.Application.Auth;
-using Identity.Application.Email;
-using Microsoft.AspNetCore.Authorization;
-using Microsoft.AspNetCore.Identity;
+﻿using Identity.Application.Auth;
+using Identity.Application.Repositories;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Configuration;
-using Microsoft.Extensions.Hosting;
 using Microsoft.Extensions.Logging;
+using System;
+using System.Collections.Generic;
+using System.Linq;
+using System.Security.Claims;
+using System.Threading.Tasks;
+using Microsoft.AspNetCore.Identity;
 
-namespace Identity.Api.Web.Controllers;
-
-[ApiController]
-[Route("auth")]
-public sealed class AuthController : ControllerBase
+namespace Identity.Api.Controllers
 {
-    private readonly UserManager<IdentityUser> _users;
-    private readonly ITokenService _tokens;
-    private readonly IEmailSender _emailSender;
-    private readonly IConfiguration _configuration;
-    private readonly IWebHostEnvironment _env;
-    private readonly ILogger<AuthController> _logger;
-
-    public AuthController(
-        UserManager<IdentityUser> users,
-        ITokenService tokens,
-        IEmailSender emailSender,
-        IConfiguration configuration,
-        IWebHostEnvironment env,
-        ILogger<AuthController> logger)
+    [ApiController]
+    [Route("auth")]
+    public class AuthController : ControllerBase
     {
-        _users = users;
-        _tokens = tokens;
-        _emailSender = emailSender;
-        _configuration = configuration;
-        _env = env;
-        _logger = logger;
-    }
+        private readonly ILogger<AuthController> _logger;
+        private readonly ITokenService _tokenService;
+        private readonly IUserRepository _userRepository; // service to validate credentials & fetch user
+        private readonly IConfiguration _configuration;
 
-    [HttpPost("login")]
-    public async Task<IActionResult> Login([FromBody] LoginRequest req)
-    {
-        var user = await _users.FindByEmailAsync(req.Email) ?? await _users.FindByNameAsync(req.Email);
-        if (user is null || !await _users.CheckPasswordAsync(user, req.Password)) return Unauthorized();
-
-        var roles = await _users.GetRolesAsync(user);
-        var access = _tokens.CreateAccessToken(user, roles);
-        var (rt, exp) = await _tokens.IssueRefreshAsync(user.Id);
-        SetRefreshCookie(rt, exp);
-
-        return Ok(new { access_token = access, token_type = "Bearer", roles });
-    }
-
-    [HttpPost("refresh")]
-    public async Task<IActionResult> Refresh()
-    {
-        var rt = Request.Cookies["rt"];
-        if (string.IsNullOrEmpty(rt)) return Unauthorized();
-
-        var user = await _tokens.ValidateRefreshAsync(rt);
-        if (user is null) return Unauthorized();
-
-        var rotated = await _tokens.RotateAsync(rt);
-        if (rotated is null) return Unauthorized();
-
-        var roles = await _users.GetRolesAsync(user);
-        var access = _tokens.CreateAccessToken(user, roles);
-        SetRefreshCookie(rotated.Value.newToken, rotated.Value.expires);
-
-        return Ok(new { access_token = access, token_type = "Bearer" });
-    }
-
-    [HttpPost("logout")]
-    public async Task<IActionResult> Logout()
-    {
-        var rt = Request.Cookies["rt"];
-        if (!string.IsNullOrEmpty(rt))
+        public AuthController(
+            ILogger<AuthController> logger,
+            ITokenService tokenService,
+            IUserRepository userRepository,
+            IConfiguration configuration)
         {
-            await _tokens.RevokeAsync(rt, "logout");
-            Response.Cookies.Delete("rt", BuildCookieOptions(DateTime.UtcNow.AddDays(-1)));
-        }
-        return NoContent();
-    }
-
-    /// <summary>
-    /// Forgot password: generate reset token, send email, return 202.
-    /// Always returns 202 to avoid user enumeration. In Development returns token+url in response for debugging.
-    /// </summary>
-    [HttpPost("forgot")]
-    public async Task<IActionResult> Forgot([FromBody] ForgotPasswordRequest req)
-    {
-        if (req is null || string.IsNullOrWhiteSpace(req.Email))
-            return BadRequest(new { error = "Email is required." });
-
-        try
-        {
-            var email = req.Email.Trim();
-            var user = await _users.FindByEmailAsync(email);
-            if (user is null)
-            {
-                // Always return Accepted to avoid leaking whether email exists
-                _logger.LogInformation("Forgot requested for non-existing email {Email}", email);
-                return Accepted(new { sent = true });
-            }
-
-            // Generate token (requires AddDefaultTokenProviders)
-            var token = await _users.GeneratePasswordResetTokenAsync(user);
-
-            // Build frontend reset URL
-            var feBase = _configuration["Frontend:BaseUrl"]?.TrimEnd('/') ?? "http://localhost:5173";
-            var encodedToken = WebUtility.UrlEncode(token);
-            var encodedEmail = WebUtility.UrlEncode(user.Email ?? "");
-            var resetUrl = $"{feBase}/reset-password?email={encodedEmail}&token={encodedToken}";
-
-            // Compose an email (simple HTML)
-            var html = $@"
-                <p>Dear {WebUtility.HtmlEncode(user.UserName ?? user.Email ?? "")},</p>
-                <p>We received a request to reset your RAS password. Click the button below to reset it.</p>
-                <p style='margin:18px 0;'><a href='{resetUrl}' style='background:#3B3A8A;color:white;padding:10px 16px;border-radius:6px;text-decoration:none;'>Reset password</a></p>
-                <p>If the button doesn't work, copy and paste this URL into your browser:</p>
-                <p><code>{WebUtility.HtmlEncode(resetUrl)}</code></p>
-                <p>If you didn't request this, you can ignore this email.</p>
-                <hr/><p>Thanks — RAS Support</p>
-            ";
-
-            // Try to send — don't fail the flow if sending errors; log the error
-            try
-            {
-                await _emailSender.SendAsync(user.Email!, "Reset your RAS password", html);
-                _logger.LogInformation("Password reset email sent to {Email}", user.Email);
-            }
-            catch (Exception ex)
-            {
-                _logger.LogError(ex, "Failed to send password reset email to {Email}", user.Email);
-                // swallow: we still return Accepted to client to avoid enumeration
-            }
-
-            // Dev helper: expose token and url for testing (remove in production)
-            if (_env.IsDevelopment())
-            {
-                return Accepted(new { sent = true, debug = new { token, resetUrl } });
-            }
-
-            return Accepted(new { sent = true });
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unhandled error in Forgot endpoint for {Email}", req.Email);
-            // Generic response so we don't leak internals
-            return Problem(detail: "An error occurred while processing the request.");
-        }
-    }
-
-    [HttpPost("reset")]
-    public async Task<IActionResult> Reset([FromBody] ResetPasswordRequest req)
-    {
-        if (req is null || string.IsNullOrWhiteSpace(req.Email) || string.IsNullOrWhiteSpace(req.Token) || string.IsNullOrWhiteSpace(req.NewPassword))
-            return BadRequest(new { error = "Email, token and newPassword are required." });
-
-        try
-        {
-            var email = req.Email.Trim();
-            var user = await _users.FindByEmailAsync(email);
-            if (user is null)
-            {
-                // don't reveal existence — return BadRequest to indicate failure similar to invalid token
-                return BadRequest(new { error = "Invalid token or user." });
-            }
-
-            // IMPORTANT: DO NOT UrlDecode the token here.
-            // The browser will already decode query params; use req.Token as-is.
-            var result = await _users.ResetPasswordAsync(user, req.Token, req.NewPassword);
-
-            if (!result.Succeeded)
-            {
-                // map errors to a friendly response but don't leak specifics
-                var errors = result.Errors.Select(e => e.Description).ToArray();
-                _logger.LogInformation("Password reset failed for {Email}: {Errors}", user.Email, string.Join("; ", errors));
-                return BadRequest(new { error = "Invalid token or password requirements not met.", details = errors });
-            }
-
-            _logger.LogInformation("Password reset successful for {Email}", user.Email);
-            return NoContent(); // 204 -> success, nothing to return
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Unhandled error in Reset endpoint for {Email}", req?.Email);
-            return Problem(detail: "An error occurred while processing the request.");
-        }
-    }
-
-    [Authorize]
-    [HttpGet("me")]
-    public async Task<IActionResult> Me()
-    {
-        // Get the current user from the HttpContext.
-        // GetUserAsync will read the user's ID from the token's claims.
-        var user = await _users.GetUserAsync(User);
-        if (user is null)
-        {
-            // This should not happen if [Authorize] is working, but it's good practice.
-            return NotFound();
+            _logger = logger;
+            _tokenService = tokenService;
+            _userRepository = userRepository;
+            _configuration = configuration;
         }
 
-        // Get the roles associated with the user.
-        var roles = await _users.GetRolesAsync(user);
-
-        // Return the user's information.
-        return Ok(new
+        [HttpPost("login")]
+        public async Task<IActionResult> Login([FromBody] LoginRequestDto req)
         {
-            email = user.Email,
-            userName = user.UserName,
-            roles = roles
-        });
+            if (req == null || string.IsNullOrWhiteSpace(req.Username) || string.IsNullOrWhiteSpace(req.Password))
+                return BadRequest(new { error = "invalid_credentials_payload" });
+
+            // Validate credentials (implement in IUserRepository or user service)
+            var user = await _userRepository.ValidateCredentialsAsync(req.Username, req.Password);
+            if (user == null)
+                return Unauthorized(new { error = "invalid_credentials" });
+
+            // Create access token (JWT) and refresh token as appropriate
+            // If you later add role lookup in IUserRepository you can pass real roles here
+            var accessToken = _tokenService.CreateAccessToken(user, Enumerable.Empty<string>());
+
+            // Create and persist refresh token
+            var refreshToken = await _tokenService.CreateRefreshTokenAsync(user);
+
+            // Optionally persist refresh token, set cookie, etc. (not calling Student service)
+            // Return minimal user info along with tokens (do not call Student service for full profile)
+            var response = new
+            {
+                access_token = accessToken,
+                refresh_token = refreshToken,
+                user = new
+                {
+                    id = user.Id,
+                    email = user.Email,
+                    username = user.UserName
+                }
+            };
+
+            return Ok(response);
+        }
+
+        // POST /auth/refresh
+        [HttpPost("refresh")]
+        public async Task<IActionResult> Refresh([FromBody] RefreshRequestDto req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.RefreshToken))
+                return BadRequest(new { error = "invalid_refresh_payload" });
+
+            // Option A: validate refresh token and get the user
+            var userFromToken = await _tokenService.ValidateRefreshAsync(req.RefreshToken);
+            if (userFromToken == null)
+            {
+                // Option B (alternate flow): try rotating directly (if RotateAsync is used in your design)
+                // var rotated = await _tokenService.RotateAsync(req.RefreshToken);
+                // if (rotated == null) return Unauthorized(new { error = "invalid_refresh_token" });
+                // var newAccess2 = _tokenService.CreateAccessToken(userFromRotated, Enumerable.Empty<string>());
+                // return Ok(new { access_token = newAccess2, refresh_token = rotated.Value.newToken });
+
+                return Unauthorized(new { error = "invalid_refresh_token" });
+            }
+
+            // At this point, token valid and user found.
+            var userId = userFromToken.Id;
+            if (string.IsNullOrEmpty(userId)) return Unauthorized(new { error = "invalid_refresh_token" });
+
+            // Optionally rotate refresh tokens for better security:
+            var rotated = await _tokenService.RotateAsync(req.RefreshToken);
+            string newRefresh;
+            if (rotated.HasValue)
+            {
+                newRefresh = rotated.Value.newToken;
+            }
+            else
+            {
+                // If rotate failed for some reason, issue a fresh refresh token (fallback)
+                newRefresh = await _tokenService.CreateRefreshTokenAsync(userFromToken);
+            }
+
+            var newAccess = _tokenService.CreateAccessToken(userFromToken, Enumerable.Empty<string>());
+
+            return Ok(new { access_token = newAccess, refresh_token = newRefresh });
+        }
+
+        [HttpPost("logout")]
+        public async Task<IActionResult> Logout([FromBody] RefreshRequestDto req)
+        {
+            if (req == null || string.IsNullOrWhiteSpace(req.RefreshToken))
+                return BadRequest(new { error = "invalid_logout_payload" });
+            await _tokenService.RevokeAsync(req.RefreshToken, "user_logout");
+            return NoContent();
+        }
     }
-
-    private void SetRefreshCookie(string token, DateTime expiresUtc) =>
-        Response.Cookies.Append("rt", token, BuildCookieOptions(expiresUtc));
-
-    private static CookieOptions BuildCookieOptions(DateTime expiresUtc) => new()
-    {
-        HttpOnly = true,
-        Secure = true,                 // set to false only for http localhost
-        SameSite = SameSiteMode.None,
-        Expires = expiresUtc
-    };
+    public record LoginRequestDto(string Username, string Password);
+    public record RefreshRequestDto(string RefreshToken);
 }

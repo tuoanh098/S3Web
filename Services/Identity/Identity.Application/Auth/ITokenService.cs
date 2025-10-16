@@ -5,6 +5,8 @@ namespace Identity.Application.Auth;
 public interface ITokenService
 {
     string CreateAccessToken(IdentityUser user, IEnumerable<string> roles);
+    Task<string> CreateRefreshTokenAsync(IdentityUser user);
+    Task<bool> ValidateRefreshTokenAsync(string userId, string refreshToken);
     Task<(string token, DateTime expires)> IssueRefreshAsync(string userId);
     Task<IdentityUser?> ValidateRefreshAsync(string token);
     Task<(string newToken, DateTime expires)?> RotateAsync(string oldToken);

@@ -1,13 +1,8 @@
-﻿namespace Student.Application.Interfaces;
-using Student.Domain.Entities;
+﻿using Student.Application.Dto;
+
 
 public interface IStudentService
 {
-    Task<Student> CreateAsync(string fullName, string email, CancellationToken ct = default);
-    Task<Student?> GetByEmailAsync(string email, CancellationToken ct = default);
-
-    Task<Student?> GetAsync(long id, CancellationToken ct = default);
-    Task<List<Student>> ListAsync(CancellationToken ct = default);
-    Task<bool> UpdateAsync(long id, string fullName, string email, CancellationToken ct = default);
-    Task<bool> DeleteAsync(long id, CancellationToken ct = default);
+    Task<StudentProfileDto?> GetByUserIdAsync(string userId);
+    Task<bool> UpdateProfileAsync(string userId, StudentUpdateDto update);
 }

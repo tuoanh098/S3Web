@@ -1,0 +1,19 @@
+[
+  {
+    "Name": "New Profile",
+    "Projects": [
+      {
+        "Path": "Services\\Identity\\Identity.Api\\Identity.Api.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "Services\\Student\\Student.Api\\Student.Api.csproj",
+        "Action": "Start"
+      },
+      {
+        "Path": "Services\\Gateway\\Gateway.Api\\Gateway.Api.csproj",
+        "Action": "Start"
+      }
+    ]
+  }
+]

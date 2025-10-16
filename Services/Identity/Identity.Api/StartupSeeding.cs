@@ -5,11 +5,10 @@ public static class StartupSeeding
 {
     private static readonly (string Email, string Password, string Role)[] DemoUsers =
     {
-        ("2251012106oanh@ou.edu.vn", "Passw0rd!", "Student"),
-        ("2251012106oanh@ou.edu.vn",  "Passw0rd!", "Parent")
+        ("nguyenthingoclinh3009@gmail.com", "Passw0rd!", "Student"),
     };
 
-    private static readonly string[] Roles = new[] { "Student", "Parent" };
+    private static readonly string[] Roles = new[] { "Student" };
 
     public static async Task EnsureSeedDataAsync(this IServiceProvider services, IWebHostEnvironment env)
     {

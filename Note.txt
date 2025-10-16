@@ -1,0 +1,6 @@
+- Identity Database update
+dotnet ef migrations add UpdateRefreshToken -p Services/Identity/Identity.Infrastructure -s Services/Identity/Identity.Api 
+dotnet ef database update -p Services/Identity/Identity.Infrastructure -s Services/Identity/Identity.Api
+- Acount:
+nguyenthingoclinh3009@gmail.com
+Passw0rd!

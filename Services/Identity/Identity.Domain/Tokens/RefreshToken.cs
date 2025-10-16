@@ -9,5 +9,6 @@ public class RefreshToken
     public DateTime ExpiresAt { get; set; }
     public DateTime? RevokedAt { get; set; }
     public string? ReplacedByToken { get; set; }
+    public string? RevokedReason { get; set; }
     public bool IsActive => RevokedAt is null && DateTime.UtcNow < ExpiresAt;
 }

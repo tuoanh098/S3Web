@@ -1,160 +1,143 @@
-import React, { useEffect, useState } from "react";
+ï»¿// src/pages/Profile.jsx
+import React from "react";
+import { useNavigate } from "react-router-dom";
 import { useAuth } from "../auth/AuthContext";
 import Avatar from "../ui/Avatar";
-import { AuthApi, StudentsApi } from "../api"; // <- ensure StudentsApi exported here
-import EditProfile from "./EditProfile";
+
+// small helper to read from localStorage safely
+function readLocalJson(key) {
+    try {
+        const raw = localStorage.getItem(key);
+        if (!raw) return null;
+        return JSON.parse(raw);
+    } catch {
+        return null;
+    }
+}
+
+function normalizeProfile(raw) {
+    if (!raw) return null;
+    return {
+        userId: raw.user_id ?? raw.userId ?? raw.user_id,
+        firstName: raw.first_name ?? raw.firstName ?? raw.first,
+        lastName: raw.last_name ?? raw.lastName ?? raw.last,
+        birthday: raw.birthday ?? raw.birthdate ?? raw.birthday,
+        gender: raw.gender ?? raw.sex,
+        nation: raw.nation ?? raw.country,
+        email: raw.email ?? raw.emailAddress,
+        mobile: raw.mobile ?? raw.phone ?? raw.phoneNumber,
+        parent: raw.parent ?? raw.parents,
+        bio: raw.bio ?? raw.about ?? raw.description,
+        joinedAt: raw.joined_at ?? raw.joinedAt ?? raw.createdAt
+    };
+}
+
+// Simple info display component
+const InfoField = ({ label, value, placeholder }) => (
+    <div>
+        <label className="text-sm font-medium text-gray-500">{label}</label>
+        <p className="mt-1 text-base text-gray-900">
+            {value || <span className="text-gray-400">{placeholder}</span>}
+        </p>
+    </div>
+);
 
 export default function Profile() {
-    const { user } = useAuth();
-    const [profile, setProfile] = useState(null);
-    const [loading, setLoading] = useState(true);
-    const [editing, setEditing] = useState(false);
-    const [err, setErr] = useState(null);
+    const nav = useNavigate();
+    const auth = useAuth(); // may provide identity/profile depending on your AuthContext
+    const identityFromCtx = auth?.identity ?? null;
+    const profileFromCtx = auth?.profile ?? null;
 
-    useEffect(() => {
-        let mounted = true;
+    // fallback to localStorage if context didn't provide
+    const identityStored = readLocalJson("identity");
+    const profileStored = readLocalJson("profile");
 
-        async function load() {
-            setLoading(true);
-            try {
-                // 1) First try identity's /auth/me (may include .student)
-                let me = null;
-                try {
-                    me = await AuthApi.me(); // your function; may return { identity, student } or just identity
-                } catch (e) {
-                    // if /auth/me requires auth header and user not logged in this may fail; ignore for now
-                    me = null;
-                }
+    const identity = identityFromCtx || identityStored || null;
+    const rawProfile = profileFromCtx || profileStored || null;
+    const profile = normalizeProfile(rawProfile);
 
-                // If me contains student directly, use it
-                if (mounted && me?.student) {
-                    setProfile(me.student);
-                    return;
-                }
+    if (!identity && !profile) {
+        return <div className="text-center p-10">Loading profile...</div>;
+    }
 
-                // Determine the email to query with: prefer me.identity.email, else token claims (useAuth().user)
-                const email =
-                    me?.identity?.email ||
-                    me?.email ||
-                    user?.email ||
-                    user?.unique_name ||
-                    user?.sub; // fallback claims
+    // displayName: prefer lastName + firstName (payload uses last_name and first_name)
+    const displayName = profile
+        ? `${profile.lastName || ""} ${profile.firstName || ""}`.trim().toUpperCase()
+        : (identity?.username || identity?.email || "User").toUpperCase();
 
-                if (!email) {
-                    // no email -> nothing to fetch
-                    if (mounted) setProfile(null);
-                    return;
-                }
-
-                // 2) Fallback: call Students service
-                try {
-                    const student = await StudentsApi.getByEmail(email);
-                    if (mounted) setProfile(student);
-                } catch (ex) {
-                    // 404 or network error -> leave profile null but don't crash
-                    if (mounted) setProfile(null);
-                }
-            } catch (ex) {
-                if (mounted) setErr("Failed to load profile");
-            } finally {
-                if (mounted) setLoading(false);
-            }
-        }
-
-        load();
-        return () => (mounted = false);
-    }, [user]);
-
-    const onSaved = (updated) => {
-        setProfile(updated);
-        setEditing(false);
-    };
-
-    const displayName =
-        profile?.displayName ||
-        profile?.fullName ||
-        user?.name ||
-        user?.unique_name ||
-        user?.email ||
-        "RAS Student";
-
-    const email = profile?.email || user?.email || "—";
-    const roles = profile?.roles || user?.roles || user?.role || [];
+    const formattedBirthday = profile?.birthday
+        ? new Date(profile.birthday).toLocaleDateString("vi-VN")
+        : null;
 
     return (
-        <div className="max-w-4xl mx-auto">
-            <div className="bg-white rounded-2xl shadow p-6 md:p-10 grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div className="flex flex-col items-center md:items-start md:col-span-1">
-                    <Avatar name={displayName} size={96} />
-                    <h2 className="mt-4 text-xl font-bold text-ras-indigo">{displayName}</h2>
-                    <p className="text-sm text-slate-500">
-                        {roles && (Array.isArray(roles) ? roles.join(", ") : String(roles))}
-                    </p>
-
-                    <div className="mt-6 w-full">
-                        <button onClick={() => setEditing(true)} className="w-full rounded-xl bg-ras-indigo text-white py-2">
-                            Edit profile
-                        </button>
+        <div className="bg-gray-100 min-h-screen">
+            <div className="max-w-5xl mx-auto py-8 px-4">
+                {/* Header Profile */}
+                <div className="bg-white rounded-lg shadow-md overflow-hidden">
+                    <div
+                        className="h-40 bg-blue-800 bg-opacity-75 relative"
+                        style={{ backgroundImage: "url('https://res.cloudinary.com/ras-vi/image/upload/v1655389656/ras-upload/trang-chu/street-wall-bg_pyqtlz.jpg')" }}
+                    >
+                        <div className="absolute -bottom-12 left-1/2 -translate-x-1/2">
+                            <Avatar name={displayName} size={96} />
+                        </div>
+                    </div>
+                    <div className="pt-16 pb-4 text-center">
+                        <h1 className="text-3xl font-bold text-gray-800">{displayName}</h1>
+                        <p className="text-sm text-gray-500 mt-1">{identity?.email ?? profile?.email}</p>
                     </div>
                 </div>
 
-                <div className="md:col-span-2">
-                    <h3 className="text-lg font-semibold text-slate-700 mb-4">Account details</h3>
-
-                    {loading ? (
-                        <div className="text-sm text-slate-500">Loading…</div>
-                    ) : (
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                            <div>
-                                <label className="block text-xs text-slate-500">Email</label>
-                                <div className="mt-1 text-sm text-slate-800">{email}</div>
-                            </div>
-
-                            <div>
-                                <label className="block text-xs text-slate-500">Joined</label>
-                                <div className="mt-1 text-sm text-slate-800">
-                                    {profile?.joinedAt ? new Date(profile.joinedAt).toLocaleString() : "—"}
-                                </div>
-                            </div>
-
-                            <div className="md:col-span-2">
-                                <label className="block text-xs text-slate-500">About</label>
-                                <div className="mt-1 text-sm text-slate-800">{profile?.bio ?? "No profile description set."}</div>
-                            </div>
-
-                            <div className="md:col-span-2">
-                                <label className="block text-xs text-slate-500">Actions</label>
-                                <div className="mt-2 flex gap-2">
-                                    <a href="/reset-password" className="text-sm text-ras-coral underline">
-                                        Change password
-                                    </a>
-                                    <a
-                                        href="#"
-                                        onClick={(e) => {
-                                            e.preventDefault();
-                                            setErr("Export not implemented");
-                                        }}
-                                        className="text-sm text-slate-600"
-                                    >
-                                        Export data
-                                    </a>
-                                </div>
+                {/* Body Profile */}
+                <div className="mt-8 grid grid-cols-1 md:grid-cols-3 gap-8">
+                    {/* Left Column */}
+                    <div className="md:col-span-1 space-y-8">
+                        <div className="bg-white p-6 rounded-lg shadow-md">
+                            <h2 className="text-xl font-semibold mb-4">Contact</h2>
+                            <div className="space-y-4">
+                                <InfoField label="Email" value={identity?.email ?? profile?.email} />
+                                <InfoField label="Mobile" value={profile?.mobile} />
+                                <InfoField label="Preferred contact" value="Email" placeholder="Not set" />
                             </div>
                         </div>
-                    )}
+                        <div className="bg-white p-6 rounded-lg shadow-md">
+                            <h2 className="text-xl font-semibold mb-4">Basic Information</h2>
+                            <div className="space-y-4">
+                                <InfoField label="Birthday" value={formattedBirthday} />
+                                <InfoField label="Gender" value={profile?.gender} placeholder="Prefer not to say" />
+                                <InfoField label="Nationality" value={profile?.nation} placeholder="Not set" />
+                            </div>
+                        </div>
+                    </div>
 
-                    {err && <div className="mt-4 text-sm text-red-700">{err}</div>}
-                </div>
-            </div>
+                    {/* Right Column */}
+                    <div className="md:col-span-2 space-y-8">
+                        <div className="bg-white p-6 rounded-lg shadow-md">
+                            <div className="flex justify-between items-center mb-4">
+                                <h2 className="text-xl font-semibold">My Story</h2>
+                                <button
+                                    onClick={() => nav("/profile/edit")}
+                                    className="bg-blue-600 text-white px-4 py-2 rounded-lg text-sm hover:bg-blue-700"
+                                >
+                                    Edit
+                                </button>
+                            </div>
+                            <div className="space-y-4">
+                                <InfoField label="About me" value={profile?.bio} placeholder="Tell us about yourself..." />
+                                <InfoField label="Parent" value={profile?.parent} placeholder="Not set" />
+                                <InfoField label="Joined" value={profile?.joinedAt ? new Date(profile.joinedAt).toLocaleString("vi-VN") : null} placeholder="Date unknown" />
+                            </div>
+                        </div>
 
-            {/* Edit drawer/modal */}
-            {editing && (
-                <div className="fixed inset-0 z-40 flex items-end md:items-center justify-center bg-black/40 p-4">
-                    <div className="bg-white w-full md:max-w-2xl rounded-xl shadow-lg p-6">
-                        <EditProfile profile={profile} onSaved={onSaved} onCancel={() => setEditing(false)} />
+                        <div className="bg-white p-6 rounded-lg shadow-md">
+                            <h2 className="text-xl font-semibold mb-4">Personalization</h2>
+                            <div className="space-y-4">
+                                <InfoField label="Personal Motivation" value="Personal Development" placeholder="Not set" />
+                            </div>
+                        </div>
                     </div>
                 </div>
-            )}
+            </div>
         </div>
     );
 }
